@@ -13,6 +13,9 @@
 
 ## 流程概览
 
+<details>
+<summary>点击展开流程详情</summary>
+
 ### 模型架构
 - 注意力
 - 多 token 预测解码
@@ -67,6 +70,8 @@
 - vllm
 - sglang
 - ollama
+
+</details>
 
 ---
 
