@@ -116,6 +116,8 @@ pip install -r requirements.txt
 python attn/tiny_vit.py
 ```
 
+
+
 ### 1.2 前馈神经网络 (Feed-Forward Network)
 
 前馈神经网络（FFN）层通常由多层感知机（MLP）构成，在注意力层之后进行非线性变换，旨在对注意力机制提取的特征信息进行深度整合与加工。
@@ -128,7 +130,7 @@ python attn/tiny_vit.py
 
 观察语言模型的发展历程，可以发现其架构从相对简洁的 Transformer 设计演变为更具工业化色彩的复杂结构，其中最具代表性的演进便是**混合专家模型（MoE）**的引入。
 
-MoE 最初由 Google 等机构探索，其核心目标是在保持甚至提升模型性能的同时，大幅降低推理时的计算成本。这一架构随后被 Mistral AI (`Mixtral`) 和 DeepSeek (`DeepSeek-MoE`) 等公司发扬光光大，并迅速成为当前顶尖大模型的主流设计之一。
+MoE 最初由 Google 等机构探索，其核心目标是在保持甚至提升模型性能的同时，大幅降低推理时的计算成本。这一架构随后被 Mistral AI (`Mixtral`) 和 DeepSeek (`DeepSeek-MoE`) 等公司发扬光大，并迅速成为当前顶尖大模型的主流设计之一。
 
 其核心思想是：将一个庞大的前馈网络（FFN）层替换为多个小型的“专家”网络（Experts）和一个“路由器”（Router）。在处理每个输入词元时，路由器会动态地、有选择性地激活一小部分（通常是 1-2 个）专家来参与计算，而其他专家则保持休眠。
 
