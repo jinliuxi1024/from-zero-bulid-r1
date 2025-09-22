@@ -21,6 +21,73 @@ class PatchEmbedding(nn.Module):
         return x
 
 
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads, dropout):
+        super(MultiHeadSelfAttention, self).__init__()
+        assert embed_dim % num_heads == 0, "embed_dim 必须能被 num_heads 整除"
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+
+        self.qkv = nn.Linear(embed_dim, embed_dim * 3)
+        self.attn_drop = nn.Dropout(dropout)
+        self.proj = nn.Linear(embed_dim, embed_dim)
+        self.proj_drop = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # x: (B, N, D)
+        B, N, D = x.shape
+        qkv = self.qkv(x)  # (B, N, 3D)
+        qkv = qkv.reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]  # (B, heads, N, head_dim)
+
+        attn_scores = (q @ k.transpose(-2, -1)) / (self.head_dim ** 0.5)  # (B, heads, N, N)
+        attn = attn_scores.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+        context = attn @ v  # (B, heads, N, head_dim)
+        context = context.transpose(1, 2).reshape(B, N, D)  # (B, N, D)
+        out = self.proj(context)
+        out = self.proj_drop(out)
+        return out
+
+
+class FeedForward(nn.Module):
+    def __init__(self, embed_dim, mlp_ratio, dropout):
+        super(FeedForward, self).__init__()
+        hidden_dim = int(embed_dim * mlp_ratio)
+        self.fc1 = nn.Linear(embed_dim, hidden_dim)
+        self.act = nn.GELU()
+        self.drop1 = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(hidden_dim, embed_dim)
+        self.drop2 = nn.Dropout(dropout)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop1(x)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, embed_dim, num_heads, mlp_ratio, dropout):
+        super(TransformerBlock, self).__init__()
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.attn = MultiHeadSelfAttention(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
+        self.drop_path1 = nn.Identity()
+
+        self.norm2 = nn.LayerNorm(embed_dim)
+        self.mlp = FeedForward(embed_dim=embed_dim, mlp_ratio=mlp_ratio, dropout=dropout)
+        self.drop_path2 = nn.Identity()
+
+    def forward(self, x):
+        # Pre-Norm + 残差
+        x = x + self.drop_path1(self.attn(self.norm1(x)))
+        x = x + self.drop_path2(self.mlp(self.norm2(x)))
+        return x
+
+
 class ViTClassifier(nn.Module):
     def __init__(self, image_size=28, patch_size=4, in_channels=1, num_classes=10,
                  embed_dim=64, depth=4, num_heads=8, mlp_ratio=4.0, dropout=0.1):
@@ -34,15 +101,14 @@ class ViTClassifier(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(p=dropout)
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim,
-            nhead=num_heads,
-            dim_feedforward=int(embed_dim * mlp_ratio),
-            dropout=dropout,
-            activation='gelu',
-            batch_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=depth)
+        # 手写 Transformer 编码器
+        self.blocks = nn.ModuleList([
+            TransformerBlock(embed_dim=embed_dim,
+                              num_heads=num_heads,
+                              mlp_ratio=mlp_ratio,
+                              dropout=dropout)
+            for _ in range(depth)
+        ])
 
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
@@ -64,7 +130,8 @@ class ViTClassifier(nn.Module):
         x = x + self.pos_embed[:, : x.size(1), :]
         x = self.pos_drop(x)
 
-        x = self.encoder(x)  # (B, 1+N, D)
+        for blk in self.blocks:
+            x = blk(x)  # (B, 1+N, D)
         x = self.norm(x[:, 0])  # 取 CLS 表征 (B, D)
         logits = self.head(x)  # (B, num_classes)
         return logits
@@ -86,7 +153,7 @@ batch_size = 64
 learning_rate = 3e-4
 weight_decay = 1e-4
 num_epochs = 12
-
+ 
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
 # 3. 数据
